@@ -1,7 +1,6 @@
 package app.hamdy.shortener.domain;
 
 import java.time.Instant;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -10,41 +9,40 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Repository;
 
 import jakarta.annotation.PostConstruct;
-import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
-import software.amazon.awssdk.services.dynamodb.model.AttributeDefinition;
+import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
+import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
+import software.amazon.awssdk.enhanced.dynamodb.Expression;
+import software.amazon.awssdk.enhanced.dynamodb.Key;
+import software.amazon.awssdk.enhanced.dynamodb.TableSchema;
+import software.amazon.awssdk.enhanced.dynamodb.model.PutItemEnhancedRequest;
+import software.amazon.awssdk.enhanced.dynamodb.model.ScanEnhancedRequest;
+import software.amazon.awssdk.enhanced.dynamodb.model.UpdateItemEnhancedRequest;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
-import software.amazon.awssdk.services.dynamodb.model.BillingMode;
 import software.amazon.awssdk.services.dynamodb.model.ConditionalCheckFailedException;
-import software.amazon.awssdk.services.dynamodb.model.CreateTableRequest;
-import software.amazon.awssdk.services.dynamodb.model.DeleteItemRequest;
-import software.amazon.awssdk.services.dynamodb.model.GetItemRequest;
-import software.amazon.awssdk.services.dynamodb.model.KeySchemaElement;
-import software.amazon.awssdk.services.dynamodb.model.KeyType;
-import software.amazon.awssdk.services.dynamodb.model.PutItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.ResourceInUseException;
-import software.amazon.awssdk.services.dynamodb.model.ScalarAttributeType;
-import software.amazon.awssdk.services.dynamodb.model.ScanRequest;
-import software.amazon.awssdk.services.dynamodb.model.UpdateItemRequest;
 
 /**
- * links table access via the plain SDK client — explicit attribute maps
- * over the enhanced-client mapper, chosen deliberately: the item ops and
- * expressions are the thing worth learning here. In prod the table comes
- * from Terraform; against DynamoDB Local (endpoint override set) it is
- * created on startup so dev needs zero manual setup.
+ * links table access via the enhanced client: {@link LinkItem} carries
+ * the mapping, the atomic-counter extension owns the click count. In
+ * prod the table comes from Terraform; against DynamoDB Local
+ * (endpoint override set) it is created on startup so dev needs zero
+ * manual setup.
  */
 @Repository
 public class LinkRepository {
 
-    private final DynamoDbClient client;
-    private final String table;
+    private static final Expression SLUG_ABSENT =
+            Expression.builder().expression("attribute_not_exists(slug)").build();
+    private static final Expression SLUG_EXISTS =
+            Expression.builder().expression("attribute_exists(slug)").build();
+
+    private final DynamoDbTable<LinkItem> table;
     private final boolean createTableOnStartup;
 
-    public LinkRepository(DynamoDbClient client,
-            @Value("${shortener.table-name}") String table,
+    public LinkRepository(DynamoDbEnhancedClient client,
+            @Value("${shortener.table-name}") String tableName,
             @Value("${aws.dynamodb-endpoint:}") String endpointOverride) {
-        this.client = client;
-        this.table = table;
+        this.table = client.table(tableName, TableSchema.fromBean(LinkItem.class));
         this.createTableOnStartup = !endpointOverride.isBlank();
     }
 
@@ -54,14 +52,7 @@ public class LinkRepository {
             return;
         }
         try {
-            client.createTable(CreateTableRequest.builder()
-                    .tableName(table)
-                    .billingMode(BillingMode.PAY_PER_REQUEST)
-                    .keySchema(KeySchemaElement.builder()
-                            .attributeName("slug").keyType(KeyType.HASH).build())
-                    .attributeDefinitions(AttributeDefinition.builder()
-                            .attributeName("slug").attributeType(ScalarAttributeType.S).build())
-                    .build());
+            table.createTable();
         } catch (ResourceInUseException alreadyExists) {
             // fine — table is there
         }
@@ -69,18 +60,10 @@ public class LinkRepository {
 
     /** @return false if the slug is already taken. */
     public boolean putIfAbsent(Link link) {
-        Map<String, AttributeValue> item = new HashMap<>();
-        item.put("slug", s(link.slug()));
-        item.put("url", s(link.url()));
-        item.put("created_at", s(link.createdAt().toString()));
-        item.put("expires_at", s(link.expiresAt().toString()));
-        item.put("expires_at_epoch", n(link.expiresAt().getEpochSecond()));
-        item.put("clicks", n(link.clicks()));
         try {
-            client.putItem(PutItemRequest.builder()
-                    .tableName(table)
-                    .item(item)
-                    .conditionExpression("attribute_not_exists(slug)")
+            table.putItem(PutItemEnhancedRequest.builder(LinkItem.class)
+                    .item(LinkItem.from(link))
+                    .conditionExpression(SLUG_ABSENT)
                     .build());
             return true;
         } catch (ConditionalCheckFailedException taken) {
@@ -89,24 +72,23 @@ public class LinkRepository {
     }
 
     public Optional<Link> find(String slug) {
-        var response = client.getItem(GetItemRequest.builder()
-                .tableName(table)
-                .key(Map.of("slug", s(slug)))
-                .build());
-        return response.hasItem() ? Optional.of(fromItem(response.item())) : Optional.empty();
+        return Optional.ofNullable(table.getItem(key(slug))).map(LinkItem::toLink);
     }
 
-    /** Atomic click count + last click timestamp; no-op if the link is gone. */
+    /**
+     * Atomic click count + last click timestamp: ignoreNulls leaves all
+     * other attributes untouched while the counter extension increments
+     * clicks. No-op if the link is gone.
+     */
     public void recordClick(String slug, Instant when) {
+        LinkItem patch = new LinkItem();
+        patch.setSlug(slug);
+        patch.setLastClickAt(when);
         try {
-            client.updateItem(UpdateItemRequest.builder()
-                    .tableName(table)
-                    .key(Map.of("slug", s(slug)))
-                    .updateExpression("ADD clicks :one SET last_click_at = :when")
-                    .conditionExpression("attribute_exists(slug)")
-                    .expressionAttributeValues(Map.of(
-                            ":one", n(1),
-                            ":when", s(when.toString())))
+            table.updateItem(UpdateItemEnhancedRequest.builder(LinkItem.class)
+                    .item(patch)
+                    .ignoreNulls(true)
+                    .conditionExpression(SLUG_EXISTS)
                     .build());
         } catch (ConditionalCheckFailedException gone) {
             // deleted between redirect lookup and click write — nothing to count
@@ -115,10 +97,7 @@ public class LinkRepository {
 
     /** Idempotent. */
     public void delete(String slug) {
-        client.deleteItem(DeleteItemRequest.builder()
-                .tableName(table)
-                .key(Map.of("slug", s(slug)))
-                .build());
+        table.deleteItem(key(slug));
     }
 
     public record LinkPage(List<Link> links, String lastSlug) {
@@ -126,35 +105,19 @@ public class LinkRepository {
 
     /** Scan page; cursor is the last slug of the previous page. */
     public LinkPage page(int limit, String afterSlug) {
-        var scan = ScanRequest.builder().tableName(table).limit(limit);
+        var scan = ScanEnhancedRequest.builder().limit(limit);
         if (afterSlug != null) {
-            scan.exclusiveStartKey(Map.of("slug", s(afterSlug)));
+            scan.exclusiveStartKey(Map.of("slug", AttributeValue.fromS(afterSlug)));
         }
-        var response = client.scan(scan.build());
-        List<Link> links = response.items().stream().map(LinkRepository::fromItem).toList();
-        String lastSlug = response.hasLastEvaluatedKey()
-                ? response.lastEvaluatedKey().get("slug").s()
-                : null;
+        var page = table.scan(scan.build()).iterator().next();
+        List<Link> links = page.items().stream().map(LinkItem::toLink).toList();
+        String lastSlug = page.lastEvaluatedKey() == null
+                ? null
+                : page.lastEvaluatedKey().get("slug").s();
         return new LinkPage(links, lastSlug);
     }
 
-    private static Link fromItem(Map<String, AttributeValue> item) {
-        return new Link(
-                item.get("slug").s(),
-                item.get("url").s(),
-                Instant.parse(item.get("created_at").s()),
-                Instant.parse(item.get("expires_at").s()),
-                item.containsKey("clicks") ? Long.parseLong(item.get("clicks").n()) : 0,
-                item.containsKey("last_click_at")
-                        ? Instant.parse(item.get("last_click_at").s())
-                        : null);
-    }
-
-    private static AttributeValue s(String value) {
-        return AttributeValue.builder().s(value).build();
-    }
-
-    private static AttributeValue n(long value) {
-        return AttributeValue.builder().n(Long.toString(value)).build();
+    private static Key key(String slug) {
+        return Key.builder().partitionValue(slug).build();
     }
 }

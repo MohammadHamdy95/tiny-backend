@@ -8,6 +8,7 @@ import org.springframework.context.annotation.Configuration;
 
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 
@@ -31,5 +32,12 @@ public class DynamoConfig {
                             AwsBasicCredentials.create("local", "local")));
         }
         return builder.build();
+    }
+
+    @Bean
+    public DynamoDbEnhancedClient dynamoDbEnhancedClient(DynamoDbClient client) {
+        // Default extensions include the atomic-counter extension used
+        // for click counts.
+        return DynamoDbEnhancedClient.builder().dynamoDbClient(client).build();
     }
 }
