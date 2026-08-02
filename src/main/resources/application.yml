@@ -1,14 +1,14 @@
 spring:
   application:
-    name: shortener-backend
+    name: tiny-backend
   mvc:
     problemdetails:
       enabled: true
 
 shortener:
-  public-url: ${SHORTENER_PUBLIC_URL:https://s.hamdy.app}
-  default-ttl-days: ${SHORTENER_DEFAULT_TTL_DAYS:1825}
-  table-name: ${SHORTENER_TABLE_NAME:links}
+  public-url: ${TINY_PUBLIC_URL:https://tiny.hamdy.app}
+  default-ttl-days: ${TINY_DEFAULT_TTL_DAYS:1825}
+  table-name: ${TINY_TABLE_NAME:links}
 
 aws:
   region: ${AWS_REGION:us-west-2}

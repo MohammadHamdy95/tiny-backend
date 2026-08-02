@@ -1,11 +1,11 @@
 # URL Shortener API — design
 
-Serves `s.hamdy.app`. Two very different surfaces on one host:
+Serves `tiny.hamdy.app`. Two very different surfaces on one host:
 
 | Surface | Path | Consumer |
 |---|---|---|
 | Redirects | `/{slug}` | anyone opening a short link |
-| API | `/api/v1/*` | the frontend at `s.hamdy.app` (same origin — no CORS) |
+| API | `/api/v1/*` | the frontend at `tiny.hamdy.app` (same origin — no CORS) |
 
 Machine-readable contract: [`../api/openapi.yaml`](../api/openapi.yaml) — the
 source of truth. This file explains the decisions.
@@ -57,7 +57,7 @@ UI and slugs share one host): `api`, `assets`, `index.html`, `favicon.ico`,
 event stream later; the API shape (`stats` object) leaves room for that.
 
 **Expiry.** Every link expires — default **5 years** from creation
-(configurable via `SHORTENER_DEFAULT_TTL_DAYS`), or an earlier
+(configurable via `TINY_DEFAULT_TTL_DAYS`), or an earlier
 `expiresAt` given on create. Enforced at redirect time (expired → 404);
 DynamoDB TTL on `expires_at_epoch` garbage-collects the rows. The
 response always echoes the effective `expiresAt`.

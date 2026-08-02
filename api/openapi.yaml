@@ -3,14 +3,14 @@ info:
   title: URL Shortener API
   version: 1.0.0-draft
   description: |
-    API for s.hamdy.app. Anonymous by design: anyone can shorten a URL —
+    API for tiny.hamdy.app. Anonymous by design: anyone can shorten a URL —
     no auth, no accounts, no tracking. Redirects live at the root
     (`/{slug}`); the API lives under `/api/v1` and is called same-origin
     by the frontend. Design rationale in docs/API.md.
 servers:
-  - url: https://s.hamdy.app
+  - url: https://tiny.hamdy.app
     description: production
-  - url: http://s.localhost
+  - url: http://tiny.localhost
     description: local dev (compose stack)
   - url: http://localhost:8080
     description: backend run directly
@@ -144,7 +144,7 @@ components:
       properties:
         slug: { type: string }
         url: { type: string, format: uri }
-        shortUrl: { type: string, format: uri, description: 'https://s.hamdy.app/{slug}' }
+        shortUrl: { type: string, format: uri, description: 'https://tiny.hamdy.app/{slug}' }
         createdAt: { type: string, format: date-time }
         expiresAt: { type: string, format: date-time, description: Always set — default 5 years from creation }
         stats:
