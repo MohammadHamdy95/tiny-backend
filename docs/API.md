@@ -53,5 +53,8 @@ UI and slugs share one host): `api`, `assets`, `index.html`, `favicon.ico`,
 `ADD`) — cheap and race-free. Per-day/referrer breakdowns would move to an
 event stream later; the API shape (`stats` object) leaves room for that.
 
-**Expiry.** Optional `expiresAt` on create, enforced at redirect time
-(expired → 404) and cleaned up by DynamoDB TTL on the same attribute.
+**Expiry.** Every link expires — default **5 years** from creation
+(configurable via `SHORTENER_DEFAULT_TTL_DAYS`), or an earlier
+`expiresAt` given on create. Enforced at redirect time (expired → 404);
+DynamoDB TTL on `expires_at_epoch` garbage-collects the rows. The
+response always echoes the effective `expiresAt`.

@@ -184,7 +184,7 @@ components:
         expiresAt:
           type: [string, 'null']
           format: date-time
-          description: Optional expiry; expired links 404 and are TTL-deleted
+          description: Optional expiry; defaults to 5 years from creation. Expired links 404 and are TTL-deleted
 
     Link:
       type: object
@@ -194,7 +194,7 @@ components:
         url: { type: string, format: uri }
         shortUrl: { type: string, format: uri, description: 'https://s.hamdy.app/{slug}' }
         createdAt: { type: string, format: date-time }
-        expiresAt: { type: [string, 'null'], format: date-time }
+        expiresAt: { type: string, format: date-time, description: Always set — default 5 years from creation }
         stats:
           type: object
           required: [clicks]
