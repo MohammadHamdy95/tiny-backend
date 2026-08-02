@@ -5,34 +5,37 @@ Serves `s.hamdy.app`. Two very different surfaces on one host:
 | Surface | Path | Consumer |
 |---|---|---|
 | Redirects | `/{slug}` | anyone opening a short link |
-| Management API | `/api/v1/*` | the frontend at `s.hamdy.app` (same origin — no CORS) |
+| API | `/api/v1/*` | the frontend at `s.hamdy.app` (same origin — no CORS) |
 
 Machine-readable contract: [`../api/openapi.yaml`](../api/openapi.yaml) — the
 source of truth. This file explains the decisions.
 
 ## Endpoints
 
-| Method | Path | Auth | Purpose |
-|---|---|---|---|
-| GET | `/{slug}` | — | 302 redirect to the target URL, increments click count |
-| POST | `/api/v1/links` | admin | create a short link (optional custom slug) |
-| GET | `/api/v1/links` | admin | list links, cursor-paginated |
-| GET | `/api/v1/links/{slug}` | admin | link details + click stats |
-| DELETE | `/api/v1/links/{slug}` | admin | delete a link |
-| GET | `/api/v1/health` | — | liveness (used by Caddy/monitoring) |
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/{slug}` | 302 redirect to the target URL, increments click count |
+| POST | `/api/v1/links` | create a short link (anonymous; optional custom slug) |
+| GET | `/api/v1/links/{slug}` | link details + click stats (knowing the slug is the access) |
+| GET | `/api/v1/health` | liveness (used by Caddy/monitoring) |
+
+**No auth, no accounts, no tracking — by design** (same philosophy as the
+paste service). Anyone can shorten a URL and share it. Consequences:
+
+- No list endpoint (a global list would expose every creator's links) and
+  no delete endpoint (no owner to scope deletion to). Cleanup is the
+  5-year TTL or the operator.
+- The UI's "recent links" panel is localStorage in the creator's browser —
+  the server keeps no per-user anything.
+- Abuse guards are URL validation plus rate limiting at Cloudflare
+  (429 reserved in the contract).
 
 ## Conventions (shared with paste-backend)
 
 - **Versioning**: URL prefix (`/api/v1`). Breaking changes → `/api/v2`; additive
   changes don't bump the version.
-- **Auth**: `Authorization: Bearer <token>` with the single admin token
-  (`SHORTENER_ADMIN_TOKEN` env var). Constant-time comparison. 401 for
-  missing/bad token. Multi-user auth is explicitly out of scope for v1.
 - **Errors**: RFC 9457 Problem Details (`application/problem+json`) with
   `type`, `title`, `status`, `detail` — never stack traces or HTML.
-- **Pagination**: cursor-based (`?limit=` + `?cursor=`, response carries
-  `nextCursor`) — maps directly onto DynamoDB's `LastEvaluatedKey`; offset
-  pagination can't be implemented efficiently there.
 - **Rate limiting**: 429 + `Retry-After` on create/redirect abuse (enforcement
   can start at Cloudflare; the contract reserves the status code).
 - **JSON naming**: camelCase; timestamps are RFC 3339 UTC (`2026-08-02T12:00:00Z`).

@@ -1,6 +1,5 @@
 package app.hamdy.shortener;
 
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -22,8 +21,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import com.jayway.jsonpath.JsonPath;
 
 /**
- * Full-stack test against DynamoDB Local: table bootstrap, create,
- * redirect + click counting, expiry rules, slug conflicts, delete.
+ * Full-stack test against DynamoDB Local: table bootstrap, anonymous
+ * create, redirect + click counting, expiry rules, slug conflicts.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -38,7 +37,6 @@ class ShortenerApiIntegrationTest {
     static void props(DynamicPropertyRegistry registry) {
         registry.add("aws.dynamodb-endpoint",
                 () -> "http://" + dynamo.getHost() + ":" + dynamo.getMappedPort(8000));
-        registry.add("shortener.admin-token", () -> "test-token");
         registry.add("shortener.public-url", () -> "http://s.localhost");
     }
 
@@ -47,7 +45,6 @@ class ShortenerApiIntegrationTest {
 
     private String create(String body) throws Exception {
         var result = mvc.perform(post("/api/v1/links")
-                .header("Authorization", "Bearer test-token")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body))
                 .andExpect(status().isCreated())
@@ -65,8 +62,7 @@ class ShortenerApiIntegrationTest {
         mvc.perform(get("/" + slug))
                 .andExpect(status().isFound());
 
-        mvc.perform(get("/api/v1/links/" + slug)
-                .header("Authorization", "Bearer test-token"))
+        mvc.perform(get("/api/v1/links/" + slug))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.stats.clicks").value(2))
                 .andExpect(jsonPath("$.stats.lastClickAt").isNotEmpty())
@@ -77,7 +73,6 @@ class ShortenerApiIntegrationTest {
     void customSlugConflictIs409() throws Exception {
         create("{\"url\":\"https://example.com\",\"slug\":\"taken-slug\"}");
         mvc.perform(post("/api/v1/links")
-                .header("Authorization", "Bearer test-token")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"url\":\"https://example.com/other\",\"slug\":\"taken-slug\"}"))
                 .andExpect(status().isConflict());
@@ -86,7 +81,6 @@ class ShortenerApiIntegrationTest {
     @Test
     void reservedSlugIs409() throws Exception {
         mvc.perform(post("/api/v1/links")
-                .header("Authorization", "Bearer test-token")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"url\":\"https://example.com\",\"slug\":\"api\"}"))
                 .andExpect(status().isConflict());
@@ -95,7 +89,6 @@ class ShortenerApiIntegrationTest {
     @Test
     void pastExpiryIs400() throws Exception {
         mvc.perform(post("/api/v1/links")
-                .header("Authorization", "Bearer test-token")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"url\":\"https://example.com\",\"expiresAt\":\"2020-01-01T00:00:00Z\"}"))
                 .andExpect(status().isBadRequest());
@@ -104,7 +97,6 @@ class ShortenerApiIntegrationTest {
     @Test
     void expiryBeyondDefaultTtlIs400() throws Exception {
         mvc.perform(post("/api/v1/links")
-                .header("Authorization", "Bearer test-token")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"url\":\"https://example.com\",\"expiresAt\":\"2099-01-01T00:00:00Z\"}"))
                 .andExpect(status().isBadRequest());
@@ -113,32 +105,8 @@ class ShortenerApiIntegrationTest {
     @Test
     void nonHttpUrlIs400() throws Exception {
         mvc.perform(post("/api/v1/links")
-                .header("Authorization", "Bearer test-token")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"url\":\"ftp://example.com/file\"}"))
                 .andExpect(status().isBadRequest());
-    }
-
-    @Test
-    void deleteIsIdempotentAndRedirectDies() throws Exception {
-        String slug = create("{\"url\":\"https://example.com/gone\"}");
-        mvc.perform(delete("/api/v1/links/" + slug)
-                .header("Authorization", "Bearer test-token"))
-                .andExpect(status().isNoContent());
-        mvc.perform(delete("/api/v1/links/" + slug)
-                .header("Authorization", "Bearer test-token"))
-                .andExpect(status().isNoContent());
-        mvc.perform(get("/" + slug))
-                .andExpect(status().isNotFound());
-    }
-
-    @Test
-    void listReturnsItems() throws Exception {
-        create("{\"url\":\"https://example.com/list-me\"}");
-        mvc.perform(get("/api/v1/links")
-                .header("Authorization", "Bearer test-token"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.items").isArray())
-                .andExpect(jsonPath("$.items[0].slug").isNotEmpty());
     }
 }

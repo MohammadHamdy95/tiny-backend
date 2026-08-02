@@ -66,14 +66,6 @@ public class LinkService {
         return lookupLive(slug);
     }
 
-    public void delete(String slug) {
-        repository.delete(slug);
-    }
-
-    public LinkRepository.LinkPage list(int limit, String cursor) {
-        return repository.page(limit, cursor);
-    }
-
     private Link lookupLive(String slug) {
         Link link = repository.find(slug).orElseThrow(() -> new LinkNotFoundException(slug));
         if (link.expired(Instant.now())) {

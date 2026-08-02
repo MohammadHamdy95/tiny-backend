@@ -1,8 +1,6 @@
 package app.hamdy.shortener.domain;
 
 import java.time.Instant;
-import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -15,9 +13,7 @@ import software.amazon.awssdk.enhanced.dynamodb.Expression;
 import software.amazon.awssdk.enhanced.dynamodb.Key;
 import software.amazon.awssdk.enhanced.dynamodb.TableSchema;
 import software.amazon.awssdk.enhanced.dynamodb.model.PutItemEnhancedRequest;
-import software.amazon.awssdk.enhanced.dynamodb.model.ScanEnhancedRequest;
 import software.amazon.awssdk.enhanced.dynamodb.model.UpdateItemEnhancedRequest;
-import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.dynamodb.model.ConditionalCheckFailedException;
 import software.amazon.awssdk.services.dynamodb.model.ResourceInUseException;
 
@@ -93,28 +89,6 @@ public class LinkRepository {
         } catch (ConditionalCheckFailedException gone) {
             // deleted between redirect lookup and click write — nothing to count
         }
-    }
-
-    /** Idempotent. */
-    public void delete(String slug) {
-        table.deleteItem(key(slug));
-    }
-
-    public record LinkPage(List<Link> links, String lastSlug) {
-    }
-
-    /** Scan page; cursor is the last slug of the previous page. */
-    public LinkPage page(int limit, String afterSlug) {
-        var scan = ScanEnhancedRequest.builder().limit(limit);
-        if (afterSlug != null) {
-            scan.exclusiveStartKey(Map.of("slug", AttributeValue.fromS(afterSlug)));
-        }
-        var page = table.scan(scan.build()).iterator().next();
-        List<Link> links = page.items().stream().map(LinkItem::toLink).toList();
-        String lastSlug = page.lastEvaluatedKey() == null
-                ? null
-                : page.lastEvaluatedKey().get("slug").s();
-        return new LinkPage(links, lastSlug);
     }
 
     private static Key key(String slug) {

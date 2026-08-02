@@ -27,10 +27,7 @@ import app.hamdy.shortener.service.SlugTakenException;
 import app.hamdy.shortener.web.dto.LinkResponse;
 
 @WebMvcTest(controllers = { RedirectController.class, LinksController.class },
-        properties = {
-                "shortener.admin-token=test-token",
-                "shortener.public-url=http://s.localhost"
-        })
+        properties = "shortener.public-url=http://s.localhost")
 @Import(LinkResponse.Factory.class)
 class WebLayerTest {
 
@@ -65,17 +62,9 @@ class WebLayerTest {
     }
 
     @Test
-    void createWithoutTokenIs401() throws Exception {
-        mvc.perform(post("/api/v1/links").contentType(MediaType.APPLICATION_JSON)
-                .content("{\"url\":\"https://example.com\"}"))
-                .andExpect(status().isUnauthorized());
-    }
-
-    @Test
-    void createWithTokenReturns201() throws Exception {
+    void createIsAnonymousAndReturns201() throws Exception {
         when(service.create(any(), isNull(), isNull())).thenReturn(link());
         mvc.perform(post("/api/v1/links")
-                .header("Authorization", "Bearer test-token")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"url\":\"https://example.com/target\"}"))
                 .andExpect(status().isCreated())
@@ -88,7 +77,6 @@ class WebLayerTest {
     void takenSlugIs409Problem() throws Exception {
         when(service.create(any(), any(), isNull())).thenThrow(new SlugTakenException("demo"));
         mvc.perform(post("/api/v1/links")
-                .header("Authorization", "Bearer test-token")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"url\":\"https://example.com\",\"slug\":\"demo\"}"))
                 .andExpect(status().isConflict());
@@ -97,10 +85,17 @@ class WebLayerTest {
     @Test
     void invalidSlugPatternIs400() throws Exception {
         mvc.perform(post("/api/v1/links")
-                .header("Authorization", "Bearer test-token")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"url\":\"https://example.com\",\"slug\":\"bad slug!\"}"))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void statsArePublic() throws Exception {
+        when(service.get("abc1234")).thenReturn(link());
+        mvc.perform(get("/api/v1/links/abc1234"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.stats.clicks").value(3));
     }
 
     @Test
