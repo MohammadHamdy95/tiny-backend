@@ -1,0 +1,18 @@
+spring:
+  application:
+    name: shortener-backend
+  mvc:
+    problemdetails:
+      enabled: true
+
+shortener:
+  # Empty token disables all admin endpoints (401) rather than opening them.
+  admin-token: ${SHORTENER_ADMIN_TOKEN:}
+  public-url: ${SHORTENER_PUBLIC_URL:https://s.hamdy.app}
+  default-ttl-days: ${SHORTENER_DEFAULT_TTL_DAYS:1825}
+  table-name: ${SHORTENER_TABLE_NAME:links}
+
+aws:
+  region: ${AWS_REGION:eu-central-1}
+  # Set to a DynamoDB Local endpoint in dev; empty = real AWS.
+  dynamodb-endpoint: ${DYNAMODB_ENDPOINT:}
